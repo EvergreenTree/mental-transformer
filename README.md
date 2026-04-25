@@ -117,6 +117,38 @@ Feature files are saved on CPU:
 }
 ```
 
+Feature files used for paired fMRI training must be auditable by stimulus ID.
+Bare tensors are rejected when paired with processed DIR files because their row
+order cannot be verified. Check alignment before training:
+
+```bash
+python scripts/audit_dir_alignment.py \
+  --processed data/processed/S1_test.pt \
+  --features features/S1_test_features.pt
+```
+
+The audit accepts either exact row-aligned features or one feature row per
+unique stimulus ID. Replacement images from the same class are not valid for
+paired retrieval metrics.
+
+To download a lightweight ImageNet subset, stage only the DIR synset archives.
+This script does not automate ImageNet login; pass cookies only if you have
+valid access. You may use the Chrome extension *Get cookies.txt LOCALLY
+* to download the cookie file.
+
+```bash
+python scripts/download_imagenet_synsets.py \
+  --synsets data/sources/dir_synsets.txt \
+  --out data/raw/imagenet_synsets \
+  --cookies cookies.txt \
+  --limit 5
+
+python scripts/extract_imagenet_subset.py \
+  --archives data/raw/imagenet_synsets \
+  --out data/images/imagenet_synsets \
+  --max-images-per-synset 8
+```
+
 ## Train And Evaluate
 
 Train one subject with precomputed features:
@@ -156,8 +188,8 @@ features, runs a short training job, and prints data dimensions plus metrics.
 
 ## S1 Comparison
 
-Run paper-aligned loss ablations on the same S1 train/test split and frozen
-OpenCLIP features:
+Run loss ablations on the same S1 train/test split and verified frozen feature
+files:
 
 ```bash
 python scripts/run_comparison_s1.py \
@@ -165,7 +197,8 @@ python scripts/run_comparison_s1.py \
   --feature-dir features \
   --device mps \
   --epochs 10 \
-  --batch-size 64
+  --batch-size 64 \
+  --output-root outputs/comparison_s1_vgg19_vc
 ```
 
 Methods:
@@ -180,8 +213,10 @@ Plot the comparison:
 python scripts/plot_comparison.py --root outputs/comparison_s1
 ```
 
-Outputs include `summary.csv`, retrieval bar charts, an RDM bar chart, and
-training curves under `outputs/comparison_s1/`.
+Outputs include `summary.csv`, stimulus/class retrieval bar charts, RDM bar
+charts, and training curves under the selected output root. Use `VC` and
+`vgg19_pool5_fallback` labels unless HVC masks or exact-image OpenCLIP features
+are available and pass alignment audit.
 
 ## Development
 

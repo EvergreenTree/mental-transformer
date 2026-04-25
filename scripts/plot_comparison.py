@@ -13,7 +13,16 @@ SUMMARY_KEYS = (
     "retrieval_top5",
     "retrieval_mean_rank",
     "retrieval_median_rank",
+    "row_top1",
+    "row_top5",
+    "stimulus_top1",
+    "stimulus_top5",
+    "class_top1",
+    "class_top5",
     "rdm_spearman",
+    "row_rdm_spearman",
+    "stimulus_rdm_spearman",
+    "class_rdm_spearman",
 )
 
 
@@ -75,9 +84,9 @@ def plot_training_curves(root: Path, all_metrics: dict[str, dict[str, Any]]) -> 
     fig, axes = plt.subplots(2, 2, figsize=(10, 7), sharex=True)
     curve_keys = (
         ("train_loss", "Train loss"),
-        ("retrieval_top1", "Retrieval top-1"),
-        ("retrieval_top5", "Retrieval top-5"),
-        ("rdm_spearman", "RDM Spearman"),
+        ("stimulus_top1", "Stimulus top-1"),
+        ("class_top1", "Class top-1"),
+        ("stimulus_rdm_spearman", "Stimulus RDM Spearman"),
     )
     for ax, (key, title) in zip(axes.flatten(), curve_keys, strict=True):
         for method in METHODS:
@@ -106,9 +115,11 @@ def main() -> None:
     root = Path(args.root)
     all_metrics = {method: load_metrics(root / method / "metrics.json") for method in METHODS}
     rows = write_summary(root, all_metrics)
-    plot_bar(root, rows, "retrieval_top1", "Retrieval top-1")
-    plot_bar(root, rows, "retrieval_top5", "Retrieval top-5")
-    plot_bar(root, rows, "rdm_spearman", "RDM Spearman")
+    plot_bar(root, rows, "stimulus_top1", "Stimulus top-1")
+    plot_bar(root, rows, "stimulus_top5", "Stimulus top-5")
+    plot_bar(root, rows, "class_top1", "Class top-1")
+    plot_bar(root, rows, "stimulus_rdm_spearman", "Stimulus RDM Spearman")
+    plot_bar(root, rows, "class_rdm_spearman", "Class RDM Spearman")
     plot_training_curves(root, all_metrics)
     print({"summary": str(root / "summary.csv"), "rows": rows})
 

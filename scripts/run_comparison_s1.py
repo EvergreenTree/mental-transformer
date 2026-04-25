@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mrgs.data import MRGSProcessedDataset, load_feature_tensor
 from mrgs.train import DEFAULT_CONFIG, run_training
 from mrgs.utils import deep_update, load_config
+from scripts.audit_dir_alignment import audit_alignment
 
 
 METHODS: dict[str, dict[str, float]] = {
@@ -27,7 +28,16 @@ REPORT_KEYS = (
     "retrieval_top5",
     "retrieval_mean_rank",
     "retrieval_median_rank",
+    "row_top1",
+    "row_top5",
+    "stimulus_top1",
+    "stimulus_top5",
+    "class_top1",
+    "class_top5",
     "rdm_spearman",
+    "row_rdm_spearman",
+    "stimulus_rdm_spearman",
+    "class_rdm_spearman",
 )
 
 
@@ -41,7 +51,7 @@ def class_ids_look_like_fallback(class_ids: torch.Tensor) -> bool:
     return class_ids.cpu().equal(expected)
 
 
-def strict_split_check(processed_path: Path, feature_path: Path, subject: str, split: str) -> dict[str, Any]:
+def strict_split_check(processed_path: Path, feature_path: Path, subject: str, split: str, roi: str) -> dict[str, Any]:
     if not processed_path.exists():
         raise FileNotFoundError(f"Missing processed split: {processed_path}")
     if not feature_path.exists():
@@ -53,6 +63,7 @@ def strict_split_check(processed_path: Path, feature_path: Path, subject: str, s
             )
         raise FileNotFoundError(f"Missing feature file: {feature_path}")
 
+    audit = audit_alignment(processed_path, feature_path)
     dataset = MRGSProcessedDataset(processed_path, feature_path=feature_path)
     features = load_feature_tensor(feature_path, expected_image_paths=dataset.payload["image_paths"])
     if features.shape[0] != len(dataset):
@@ -71,21 +82,26 @@ def strict_split_check(processed_path: Path, feature_path: Path, subject: str, s
         "classes": dataset.spec.num_classes,
         "processed": str(processed_path),
         "features": str(feature_path),
+        "feature_backend": "vgg19_pool5_fallback",
+        "roi": roi,
+        "audit": audit,
     }
 
 
-def validate_real_data(processed_dir: Path, feature_dir: Path, subject: str = "S1") -> dict[str, Any]:
+def validate_real_data(processed_dir: Path, feature_dir: Path, subject: str = "S1", roi: str = "VC") -> dict[str, Any]:
     train = strict_split_check(
         processed_dir / f"{subject}_train.pt",
         feature_dir / f"{subject}_train_features.pt",
         subject,
         "train",
+        roi,
     )
     test = strict_split_check(
         processed_dir / f"{subject}_test.pt",
         feature_dir / f"{subject}_test_features.pt",
         subject,
         "test",
+        roi,
     )
     print({"train": train, "test": test})
     return {"train": train, "test": test}
@@ -105,9 +121,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--eval-batch-size", type=int, default=128)
-    parser.add_argument("--output-root", default="outputs/comparison_s1")
+    parser.add_argument("--output-root", default="outputs/comparison_s1_vgg19_vc")
     parser.add_argument("--subject", default="S1")
-    parser.add_argument("--roi", default="HVC")
+    parser.add_argument("--roi", default="VC")
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -118,7 +134,7 @@ def main() -> None:
     processed_dir = Path(args.processed_dir)
     feature_dir = Path(args.feature_dir)
     output_root = Path(args.output_root)
-    validation = validate_real_data(processed_dir, feature_dir, subject=args.subject)
+    validation = validate_real_data(processed_dir, feature_dir, subject=args.subject, roi=args.roi)
 
     base_config = deep_update(DEFAULT_CONFIG, load_config(args.config))
     if args.seed is not None:
@@ -151,10 +167,14 @@ def main() -> None:
         )
         print(f"RUN {method}: {loss_overrides}")
         metrics = run_training(config)
+        metrics["feature_backend"] = "vgg19_pool5_fallback"
+        metrics["roi"] = args.roi
+        metrics["alignment_validation"] = validation
         inner_metrics = method_output / args.subject / "metrics.json"
         target_metrics = method_output / "metrics.json"
         if inner_metrics.exists():
-            shutil.copy2(inner_metrics, target_metrics)
+            target_metrics.parent.mkdir(parents=True, exist_ok=True)
+            target_metrics.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         else:
             target_metrics.parent.mkdir(parents=True, exist_ok=True)
             target_metrics.write_text(json.dumps(metrics, indent=2), encoding="utf-8")

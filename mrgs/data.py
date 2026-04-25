@@ -45,18 +45,57 @@ def validate_processed_payload(payload: dict[str, Any]) -> None:
         raise ValueError("image_paths, class_ids, and fmri must have matching first dimensions")
 
 
-def load_feature_tensor(path: str | Path, expected_image_paths: list[str] | None = None) -> torch.Tensor:
-    payload = torch.load(Path(path), map_location="cpu")
+def _feature_tensor_from_payload(payload: Any, path: str | Path) -> torch.Tensor:
     if torch.is_tensor(payload):
         return payload.float()
     if isinstance(payload, dict):
-        if expected_image_paths is not None and "image_paths" in payload:
-            if list(payload["image_paths"]) != expected_image_paths:
-                raise ValueError(f"Feature file image_paths do not match processed file: {path}")
         for key in ("features", "image_features", "embeddings"):
             if key in payload and torch.is_tensor(payload[key]):
                 return payload[key].float()
     raise ValueError(f"Could not find a feature tensor in {path}")
+
+
+def _expand_unique_features(
+    features: torch.Tensor,
+    feature_image_paths: list[str],
+    expected_image_paths: list[str],
+    path: str | Path,
+) -> torch.Tensor:
+    if len(feature_image_paths) != features.shape[0]:
+        raise ValueError(f"Feature file image_paths and features have different lengths: {path}")
+    if len(set(feature_image_paths)) != len(feature_image_paths):
+        raise ValueError(f"Feature file has duplicate image_paths but is not row-aligned: {path}")
+    missing = sorted(set(expected_image_paths).difference(feature_image_paths))
+    if missing:
+        preview = ", ".join(missing[:5])
+        raise ValueError(f"Feature file is missing {len(missing)} expected stimulus IDs; first missing: {preview}")
+    index = {stimulus_id: row for row, stimulus_id in enumerate(feature_image_paths)}
+    return features[torch.tensor([index[stimulus_id] for stimulus_id in expected_image_paths], dtype=torch.long)]
+
+
+def load_feature_tensor(path: str | Path, expected_image_paths: list[str] | None = None) -> torch.Tensor:
+    payload = torch.load(Path(path), map_location="cpu")
+    if expected_image_paths is not None and torch.is_tensor(payload):
+        raise ValueError(
+            f"Feature file lacks image_paths metadata and cannot be aligned safely to processed rows: {path}"
+        )
+    features = _feature_tensor_from_payload(payload, path)
+    if torch.is_tensor(payload):
+        return features
+    if isinstance(payload, dict):
+        if expected_image_paths is None:
+            return features
+        if "image_paths" not in payload:
+            raise ValueError(
+                f"Feature file lacks image_paths metadata and cannot be aligned safely to processed rows: {path}"
+            )
+        feature_image_paths = list(payload["image_paths"])
+        if feature_image_paths == expected_image_paths:
+            return features
+        if features.shape[0] == len(set(expected_image_paths)):
+            return _expand_unique_features(features, feature_image_paths, expected_image_paths, path)
+        raise ValueError(f"Feature file image_paths do not match processed file: {path}")
+    raise ValueError(f"Unsupported feature payload in {path}")
 
 
 class MRGSProcessedDataset(Dataset[dict[str, Any]]):

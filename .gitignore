@@ -31,7 +31,10 @@ dist/
 *.egg-info/
 
 # Data, models, and run outputs
+cookies.txt
+*.cookies
 data/raw/
+data/images/
 data/processed/
 features/
 outputs/
@@ -58,3 +61,4 @@ logs/
 !data/
 !data/sources/
 !data/sources/imagenet_synsets.txt
+!data/sources/dir_synsets.txt
