@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments and local config
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+.python-version
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Data, models, and run outputs
+data/raw/
+data/processed/
+features/
+outputs/
+checkpoints/
+wandb/
+runs/
+logs/
+*.log
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npy
+*.npz
+*.mat
+*.h5
+*.hdf5
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Keep lightweight source placeholders.
+!data/
+!data/sources/
+!data/sources/imagenet_synsets.txt

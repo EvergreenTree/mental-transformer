@@ -1,0 +1,9 @@
+# One ImageNet synset id per line, matching DIR categories.
+#
+# Do not download full ImageNet-21K for the minimal baseline. Place per-synset
+# folders or tar files under data/raw/imagenet21k/ and point preprocessing at
+# those local files.
+#
+# Source: https://image-net.org/download
+# Single synset pattern:
+# https://image-net.org/data/winter21_whole/[synsetid].tar

@@ -1,0 +1,9 @@
+numpy
+open_clip_torch
+Pillow
+pytest
+PyYAML
+scipy
+torch
+torchvision
+tqdm

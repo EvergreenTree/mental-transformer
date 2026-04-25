@@ -1,0 +1,44 @@
+seed: 42
+device: auto
+
+data:
+  data_dir: data/processed
+  features_dir:
+  subject: S1
+  roi: HVC
+  synthetic: false
+  num_workers: 0
+
+synthetic:
+  train_samples: 512
+  test_samples: 128
+  image_feature_dim: 256
+  fmri_dim: 384
+  latent_source_dim: 64
+  num_classes: 50
+  noise_std: 0.05
+
+model:
+  latent_dim: 512
+  hidden_dim: 1024
+  projector_layers: 2
+  encoder_layers: 2
+  dropout: 0.1
+  use_attention: false
+  attention_heads: 8
+
+loss:
+  temperature: 0.07
+  tau: 0.07
+  lambda_ot: 1.0
+  lambda_rdm: 10.0
+  sinkhorn_iters: 20
+
+train:
+  epochs: 20
+  batch_size: 64
+  lr: 0.0003
+  weight_decay: 0.01
+  eval_batch_size: 128
+  output_dir: outputs
+  save_every: 0
