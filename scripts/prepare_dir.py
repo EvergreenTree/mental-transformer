@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import tarfile
 import zipfile
 from pathlib import Path
@@ -174,6 +175,16 @@ def normalized_name(path: Path) -> str:
     return str(path).lower().replace("-", "_").replace(".", "_")
 
 
+def path_matches_subject(path: Path, subject: str) -> bool:
+    aliases = SUBJECT_ALIASES.get(subject, (subject.lower(),))
+    name = normalized_name(path)
+    for alias in aliases:
+        alias = alias.lower().replace("-", "_")
+        if re.search(rf"(^|[/_]){re.escape(alias)}($|[/_])", name):
+            return True
+    return False
+
+
 def split_words(split: str) -> tuple[str, ...]:
     return TRAIN_WORDS if split == "train" else TEST_WORDS
 
@@ -181,7 +192,7 @@ def split_words(split: str) -> tuple[str, ...]:
 def score_path(path: Path, subject: str, split: str, terms: tuple[str, ...]) -> int:
     name = normalized_name(path)
     score = 0
-    if any(alias in name for alias in SUBJECT_ALIASES.get(subject, (subject.lower(),))):
+    if path_matches_subject(path, subject):
         score += 5
     if any(word in name for word in split_words(split)):
         score += 5

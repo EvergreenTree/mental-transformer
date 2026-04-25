@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import pytest
+from pathlib import Path
 from PIL import Image
 from torch import nn
 from torch.utils.data import DataLoader
@@ -13,6 +14,7 @@ from mrgs.models import MRGSModel
 from mrgs.train import DEFAULT_CONFIG, run_training
 from mrgs.utils import deep_update
 from scripts.audit_dir_alignment import audit_alignment
+from scripts.prepare_dir import path_matches_subject
 
 
 def test_synthetic_forward_loss_and_metrics() -> None:
@@ -45,7 +47,9 @@ def test_synthetic_forward_loss_and_metrics() -> None:
         "rdm_spearman",
         "row_top1",
         "stimulus_top1",
+        "stimulus_random_top1",
         "class_top1",
+        "class_random_top1",
         "row_rdm_spearman",
         "stimulus_rdm_spearman",
         "class_rdm_spearman",
@@ -198,6 +202,24 @@ def test_repeated_stimulus_retrieval_counts_stimulus_hits() -> None:
     assert metrics["row_top1"] == pytest.approx(1 / 3)
     assert metrics["stimulus_top1"] == pytest.approx(1.0)
     assert metrics["class_top1"] == pytest.approx(1.0)
+    assert metrics["stimulus_random_top1"] == pytest.approx(1 / 2)
+    assert metrics["stimulus_random_top5"] == pytest.approx(1.0)
+
+
+def test_grouped_retrieval_collapses_duplicate_targets_for_topk() -> None:
+    z_img = torch.eye(6)
+    z_fmri = z_img[[5, 0, 1, 2, 3, 4]]
+    stimulus_ids = ["stim_a", "stim_a", "stim_b", "stim_b", "stim_c", "stim_c"]
+    class_ids = torch.tensor([0, 0, 1, 1, 2, 2], dtype=torch.long)
+    metrics = brain_to_image_retrieval(z_img, z_fmri, stimulus_ids=stimulus_ids, class_ids=class_ids)
+
+    assert metrics["row_top1"] == pytest.approx(0.0)
+    assert metrics["stimulus_top1"] == pytest.approx(0.5)
+    assert metrics["stimulus_top5"] == pytest.approx(1.0)
+    assert metrics["class_top1"] == pytest.approx(0.5)
+    assert metrics["class_top5"] == pytest.approx(1.0)
+    assert metrics["stimulus_random_top1"] == pytest.approx(1 / 3)
+    assert metrics["stimulus_random_top5"] == pytest.approx(1.0)
 
 
 def test_alignment_audit_accepts_row_aligned_and_rejects_bare_tensor(tmp_path) -> None:
@@ -221,3 +243,10 @@ def test_alignment_audit_accepts_row_aligned_and_rejects_bare_tensor(tmp_path) -
     torch.save(torch.randn(4, 1), bare)
     with pytest.raises(ValueError, match="lacks image_paths"):
         audit_alignment(processed, bare)
+
+
+def test_prepare_dir_subject_match_does_not_confuse_v2_suffix() -> None:
+    s1_v2 = Path("data/raw/DIR/sub-01_perceptionNaturalImageTraining_VC_v2.h5")
+    s2_v2 = Path("data/raw/DIR/sub-02_perceptionNaturalImageTraining_VC_v2.h5")
+    assert path_matches_subject(s1_v2, "S2") is False
+    assert path_matches_subject(s2_v2, "S2") is True

@@ -1,13 +1,20 @@
 # Mental Representation-Guided Supervision Baseline
 
-A compact PyTorch baseline for aligning frozen image-model representations with
-human fMRI-derived representational geometry. It implements the minimal core of
-mental representation-guided supervision: precomputed image features, an image
-projection head, an fMRI encoder, Sinkhorn matching, and RDM alignment.
+Compact PyTorch baseline for
+[Human-like cognitive generalization for large models via mental representation-guided supervision](https://www.nature.com/articles/s41467-026-71267-5).
+Original project: [JxuanC/mental-representation-guided-learning](https://github.com/JxuanC/mental-representation-guided-learning).
 
-This is not a full reproduction of the paper. It intentionally omits full
-Gromov-Wasserstein graph matching, Gumbel-Softmax local graph sampling,
-WordNet/THINGS/COCO evaluations, and model-scale sweeps.
+This repo implements a minimal paired fMRI/image-feature pipeline: frozen image
+features, an image projection head, an fMRI encoder, Sinkhorn matching, RDM
+alignment, and stimulus-aware evaluation. It is not a full reproduction: it
+omits full Gromov-Wasserstein graph matching, Gumbel-Softmax local graph
+sampling, WordNet/THINGS/COCO evaluations, and model-scale sweeps.
+
+![Diagnostic all-subject VGG19/VC comparison](docs/figures/multisubject_stimulus_summary.png)
+
+Diagnostic S1-S3 DIR result, using audited `vgg19_pool5_fallback` features and
+`VC` fMRI. MRGS is modestly above random on stimulus retrieval and strongest on
+mean RDM, but this is not an OpenCLIP/HVC paper-aligned result.
 
 ## Install
 
@@ -15,12 +22,9 @@ WordNet/THINGS/COCO evaluations, and model-scale sweeps.
 python -m pip install -r requirements.txt
 ```
 
-The code selects CUDA, Apple MPS, or CPU automatically. Pass `--device mps`,
-`--device cuda`, or `--device cpu` to override.
+Device selection is automatic. Override with `--device mps`, `cuda`, or `cpu`.
 
-## Quick Smoke Test
-
-Run the synthetic paired-data path without downloading fMRI or images:
+## Smoke Test
 
 ```bash
 python -m mrgs.train \
@@ -31,43 +35,28 @@ python -m mrgs.train \
   --batch-size 64
 ```
 
-## Real Data Path
-
-The minimal real-data path uses the public Deep Image Reconstruction dataset and
-offline frozen image features.
+## Data
 
 Sources:
 
 - DIR / OpenNeuro: <https://openneuro.org/datasets/ds001506/versions/1.3.1>
 - Preprocessed fMRI / figshare: <https://figshare.com/articles/dataset/Deep_Image_Reconstruction/7033577>
 - ImageNet: <https://image-net.org/download>
-- Single synset archives: `https://image-net.org/data/winter21_whole/[synsetid].tar`
+- Synset archives: `https://image-net.org/data/winter21_whole/[synsetid].tar`
 
-Download available figshare files and write a local manifest:
+Download figshare metadata/files:
 
 ```bash
 python scripts/download_dir_metadata.py --download --out data/raw/DIR
 ```
 
-Preprocess staged or downloaded DIR files:
+Preprocess DIR:
 
 ```bash
 python scripts/prepare_dir.py --raw data/raw/DIR --out data/processed --roi HVC
 ```
 
-Expected processed files:
-
-```text
-data/processed/
-  S1_train.pt
-  S1_test.pt
-  S2_train.pt
-  S2_test.pt
-  S3_train.pt
-  S3_test.pt
-```
-
-Each file contains:
+Processed files contain:
 
 ```python
 {
@@ -80,14 +69,12 @@ Each file contains:
 }
 ```
 
-If real image paths are not available, `prepare_dir.py` stores stable stimulus
-IDs in `image_paths`; training can still run with aligned cached feature files.
+If real image paths are missing, `image_paths` stores stimulus IDs. Training can
+still use audited cached feature files.
 
 ## Image Features
 
-The image encoder is frozen and used only for offline extraction. The default
-backend is OpenCLIP `ViT-B-32` with `laion2b_s34b_b79k`; on MPS the default
-feature-extraction batch size is `8`.
+OpenCLIP extraction:
 
 ```bash
 python scripts/extract_image_features.py \
@@ -97,7 +84,7 @@ python scripts/extract_image_features.py \
   --device mps
 ```
 
-Use MobileNetV3-small for a lighter fallback:
+Light fallback:
 
 ```bash
 python scripts/extract_image_features.py \
@@ -106,7 +93,7 @@ python scripts/extract_image_features.py \
   --backend mobilenet_v3_small
 ```
 
-Feature files are saved on CPU:
+Feature files must carry `image_paths` so paired fMRI rows can be audited:
 
 ```python
 {
@@ -117,9 +104,7 @@ Feature files are saved on CPU:
 }
 ```
 
-Feature files used for paired fMRI training must be auditable by stimulus ID.
-Bare tensors are rejected when paired with processed DIR files because their row
-order cannot be verified. Check alignment before training:
+Audit before training:
 
 ```bash
 python scripts/audit_dir_alignment.py \
@@ -127,14 +112,15 @@ python scripts/audit_dir_alignment.py \
   --features features/S1_test_features.pt
 ```
 
-The audit accepts either exact row-aligned features or one feature row per
-unique stimulus ID. Replacement images from the same class are not valid for
-paired retrieval metrics.
+The audit accepts exact row-aligned features or one feature row per unique
+stimulus. Bare tensors and class-replacement images are rejected for paired
+retrieval metrics.
 
-To download a lightweight ImageNet subset, stage only the DIR synset archives.
-This script does not automate ImageNet login; pass cookies only if you have
-valid access. You may use the Chrome extension *Get cookies.txt LOCALLY
-* to download the cookie file.
+## Lightweight ImageNet Subset
+
+Download only DIR synset archives. The script does not automate ImageNet login;
+provide cookies only if you have valid access. A browser extension such as
+`Get cookies.txt LOCALLY` can export `cookies.txt`.
 
 ```bash
 python scripts/download_imagenet_synsets.py \
@@ -149,9 +135,12 @@ python scripts/extract_imagenet_subset.py \
   --max-images-per-synset 8
 ```
 
+Do not use replacement class images for paired retrieval; use exact stimulus
+images or audited figshare features.
+
 ## Train And Evaluate
 
-Train one subject with precomputed features:
+Train:
 
 ```bash
 python -m mrgs.train \
@@ -162,7 +151,7 @@ python -m mrgs.train \
   --device mps
 ```
 
-Evaluate a checkpoint:
+Evaluate:
 
 ```bash
 python scripts/eval_subject.py \
@@ -172,24 +161,12 @@ python scripts/eval_subject.py \
   --device mps
 ```
 
-Metrics include brain-to-image retrieval top-1, top-5, mean rank, median rank,
-and RDM Spearman correlation.
-
-## S1 Convenience Run
-
-For a narrow end-to-end real-data run:
-
-```bash
-python scripts/run_minimal_real_s1.py --device mps
-```
-
-This checks/downloads figshare files, preprocesses S1, extracts or validates S1
-features, runs a short training job, and prints data dimensions plus metrics.
+Metrics include row, stimulus, and class retrieval plus row/stimulus/class RDM
+Spearman correlations.
 
 ## S1 Comparison
 
-Run loss ablations on the same S1 train/test split and verified frozen feature
-files:
+Run loss ablations on audited S1 features:
 
 ```bash
 python scripts/run_comparison_s1.py \
@@ -201,22 +178,17 @@ python scripts/run_comparison_s1.py \
   --output-root outputs/comparison_s1_vgg19_vc
 ```
 
-Methods:
+Methods: `contrastive_only`, `contrastive_ot`, `mrgs`.
 
-- `contrastive_only`: contrastive loss only.
-- `contrastive_ot`: contrastive plus Sinkhorn OT.
-- `mrgs`: contrastive plus Sinkhorn OT plus RDM alignment.
-
-Plot the comparison:
+Plot:
 
 ```bash
-python scripts/plot_comparison.py --root outputs/comparison_s1
+python scripts/plot_comparison.py --root outputs/comparison_s1_vgg19_vc
 ```
 
-Outputs include `summary.csv`, stimulus/class retrieval bar charts, RDM bar
-charts, and training curves under the selected output root. Use `VC` and
-`vgg19_pool5_fallback` labels unless HVC masks or exact-image OpenCLIP features
-are available and pass alignment audit.
+Outputs include `summary.csv`, stimulus/class retrieval charts, RDM charts, and
+training curves. Use `VC` and `vgg19_pool5_fallback` labels unless HVC masks or
+exact-image OpenCLIP features are available and pass audit.
 
 ## Development
 

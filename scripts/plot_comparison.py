@@ -17,8 +17,12 @@ SUMMARY_KEYS = (
     "row_top5",
     "stimulus_top1",
     "stimulus_top5",
+    "stimulus_random_top1",
+    "stimulus_random_top5",
     "class_top1",
     "class_top5",
+    "class_random_top1",
+    "class_random_top5",
     "rdm_spearman",
     "row_rdm_spearman",
     "stimulus_rdm_spearman",
@@ -64,18 +68,49 @@ def import_pyplot():
     return plt
 
 
-def plot_bar(root: Path, rows: list[dict[str, Any]], key: str, ylabel: str) -> None:
+def plot_bar(root: Path, rows: list[dict[str, Any]], key: str, ylabel: str, baseline_key: str | None = None) -> None:
     plt = import_pyplot()
     methods = [row["method"] for row in rows]
     values = [float(row[key]) for row in rows]
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.bar(methods, values)
+    if baseline_key is not None:
+        baselines = [float(row[baseline_key]) for row in rows if row.get(baseline_key) is not None]
+        if baselines:
+            baseline = sum(baselines) / len(baselines)
+            ax.axhline(baseline, color="black", linestyle="--", linewidth=1, label=f"random {baseline:.3g}")
+            ax.legend()
     ax.set_ylabel(ylabel)
     ax.set_xlabel("method")
     ax.set_title(ylabel)
     ax.tick_params(axis="x", rotation=20)
     fig.tight_layout()
     fig.savefig(root / f"{key}_bar.png", dpi=160)
+    plt.close(fig)
+
+
+def plot_stimulus_summary(root: Path, rows: list[dict[str, Any]]) -> None:
+    plt = import_pyplot()
+    methods = [row["method"] for row in rows]
+    fig, axes = plt.subplots(2, 2, figsize=(10, 7))
+    panels = (
+        ("stimulus_top1", "stimulus_random_top1", "Stimulus top-1"),
+        ("stimulus_top5", "stimulus_random_top5", "Stimulus top-5"),
+        ("stimulus_rdm_spearman", None, "Stimulus RDM Spearman"),
+        ("class_rdm_spearman", None, "Class RDM Spearman"),
+    )
+    for ax, (key, baseline_key, title) in zip(axes.flatten(), panels, strict=True):
+        values = [float(row[key]) for row in rows]
+        ax.bar(methods, values)
+        if baseline_key is not None:
+            baseline = sum(float(row[baseline_key]) for row in rows) / len(rows)
+            ax.axhline(baseline, color="black", linestyle="--", linewidth=1, label=f"random {baseline:.3g}")
+            ax.legend()
+        ax.set_title(title)
+        ax.tick_params(axis="x", rotation=20)
+        ax.grid(True, axis="y", alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(root / "stimulus_summary.png", dpi=160)
     plt.close(fig)
 
 
@@ -95,6 +130,16 @@ def plot_training_curves(root: Path, all_metrics: dict[str, dict[str, Any]]) -> 
             ys = [float(epoch[key]) for epoch in epochs if key in epoch]
             if xs and ys:
                 ax.plot(xs[: len(ys)], ys, marker="o", label=method)
+        baseline_key = None
+        if key == "stimulus_top1":
+            baseline_key = "stimulus_random_top1"
+        elif key == "class_top1":
+            baseline_key = "class_random_top1"
+        if baseline_key is not None:
+            finals = [final_epoch(all_metrics[method]).get(baseline_key) for method in METHODS]
+            baselines = [float(value) for value in finals if value is not None]
+            if baselines:
+                ax.axhline(sum(baselines) / len(baselines), color="black", linestyle="--", linewidth=1)
         ax.set_title(title)
         ax.set_xlabel("epoch")
         ax.grid(True, alpha=0.3)
@@ -115,11 +160,12 @@ def main() -> None:
     root = Path(args.root)
     all_metrics = {method: load_metrics(root / method / "metrics.json") for method in METHODS}
     rows = write_summary(root, all_metrics)
-    plot_bar(root, rows, "stimulus_top1", "Stimulus top-1")
-    plot_bar(root, rows, "stimulus_top5", "Stimulus top-5")
-    plot_bar(root, rows, "class_top1", "Class top-1")
+    plot_bar(root, rows, "stimulus_top1", "Stimulus top-1", "stimulus_random_top1")
+    plot_bar(root, rows, "stimulus_top5", "Stimulus top-5", "stimulus_random_top5")
+    plot_bar(root, rows, "class_top1", "Class top-1", "class_random_top1")
     plot_bar(root, rows, "stimulus_rdm_spearman", "Stimulus RDM Spearman")
     plot_bar(root, rows, "class_rdm_spearman", "Class RDM Spearman")
+    plot_stimulus_summary(root, rows)
     plot_training_curves(root, all_metrics)
     print({"summary": str(root / "summary.csv"), "rows": rows})
 

@@ -61,6 +61,31 @@ def _rank_metrics(ranks: torch.Tensor, n_targets: int, prefix: str) -> dict[str,
     }
 
 
+def _group_retrieval_metrics(
+    sim: torch.Tensor,
+    query_group_ids: list[Any],
+    target_group_ids: list[Any],
+    prefix: str,
+) -> dict[str, float]:
+    if len(query_group_ids) != sim.shape[0] or len(target_group_ids) != sim.shape[1]:
+        raise ValueError(f"{prefix} group id lengths must match similarity matrix")
+    groups = list(dict.fromkeys(target_group_ids))
+    group_scores = []
+    for group in groups:
+        target_indices = [index for index, value in enumerate(target_group_ids) if value == group]
+        group_scores.append(sim[:, target_indices].max(dim=1).values)
+    grouped_sim = torch.stack(group_scores, dim=1)
+    order = torch.argsort(grouped_sim, dim=1, descending=True)
+    group_index = {group: index for index, group in enumerate(groups)}
+    target_indices = torch.tensor([group_index[value] for value in query_group_ids], device=sim.device).unsqueeze(1)
+    group_positions = torch.arange(len(groups), device=sim.device).unsqueeze(0)
+    ranks = _first_match_ranks(order, group_positions == target_indices)
+    metrics = _rank_metrics(ranks, len(groups), prefix)
+    metrics[f"{prefix}_random_top1"] = 1.0 / max(len(groups), 1)
+    metrics[f"{prefix}_random_top5"] = min(5, len(groups)) / max(len(groups), 1)
+    return metrics
+
+
 def brain_to_image_retrieval(
     z_img: torch.Tensor,
     z_fmri: torch.Tensor,
@@ -85,16 +110,13 @@ def brain_to_image_retrieval(
     if stimulus_ids is not None:
         if len(stimulus_ids) != sim.shape[0]:
             raise ValueError("stimulus_ids length must match embeddings")
-        stimulus_array = np.asarray(stimulus_ids)
-        stimulus_equal = torch.from_numpy(stimulus_array[:, None] == stimulus_array[None, :]).to(sim.device)
-        metrics.update(_rank_metrics(_first_match_ranks(order, stimulus_equal), sim.shape[1], "stimulus"))
+        metrics.update(_group_retrieval_metrics(sim, stimulus_ids, stimulus_ids, "stimulus"))
 
     if class_ids is not None:
         if class_ids.shape[0] != sim.shape[0]:
             raise ValueError("class_ids length must match embeddings")
-        classes = class_ids.to(sim.device)
-        class_equal = classes.unsqueeze(1) == classes.unsqueeze(0)
-        metrics.update(_rank_metrics(_first_match_ranks(order, class_equal), sim.shape[1], "class"))
+        class_values = [int(value) for value in class_ids.tolist()]
+        metrics.update(_group_retrieval_metrics(sim, class_values, class_values, "class"))
     return metrics
 
 
@@ -153,8 +175,12 @@ def evaluate_model(
         "row_top5": retrieval["row_top5"],
         "stimulus_top1": retrieval.get("stimulus_top1", float("nan")),
         "stimulus_top5": retrieval.get("stimulus_top5", float("nan")),
+        "stimulus_random_top1": retrieval.get("stimulus_random_top1", float("nan")),
+        "stimulus_random_top5": retrieval.get("stimulus_random_top5", float("nan")),
         "class_top1": retrieval.get("class_top1", float("nan")),
         "class_top5": retrieval.get("class_top5", float("nan")),
+        "class_random_top1": retrieval.get("class_random_top1", float("nan")),
+        "class_random_top5": retrieval.get("class_random_top5", float("nan")),
         "row_rdm_spearman": rdm_correlation(z_img, z_fmri),
         "stimulus_rdm_spearman": rdm_correlation(
             average_by_group(z_img, stimulus_ids),
