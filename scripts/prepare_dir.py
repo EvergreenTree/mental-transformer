@@ -64,7 +64,11 @@ def materialize_archives(raw_dir: Path) -> Path:
             continue
         if path.suffix.lower() == ".zip":
             print(f"EXTRACT {path} -> {target}")
-            safe_extract_zip(path, target)
+            try:
+                safe_extract_zip(path, target)
+            except zipfile.BadZipFile:
+                print(f"WARNING: skipping invalid zip file {path}")
+                continue
             marker.write_text("ok\n", encoding="utf-8")
         elif suffixes.endswith((".tar", ".tar.gz", ".tgz")):
             print(f"EXTRACT {path} -> {target}")
@@ -121,6 +125,40 @@ def load_array(path: Path) -> torch.Tensor:
 
 def load_lines(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def expand_to_samples(values: list[str], n_samples: int) -> list[str] | None:
+    if len(values) == n_samples:
+        return values
+    if values and n_samples % len(values) == 0:
+        repeats = n_samples // len(values)
+        return values * repeats
+    return None
+
+
+def stimulus_names_from_h5(path: Path, n_samples: int) -> list[str] | None:
+    if path.suffix.lower() not in {".h5", ".hdf5"}:
+        return None
+    try:
+        import h5py
+    except ImportError:
+        return None
+    with h5py.File(path, "r") as handle:
+        if "vmap/stimulus_name" not in handle:
+            return None
+        group = handle["vmap/stimulus_name"]
+        ordered = sorted(group.keys(), key=lambda key: float(key))
+        names = []
+        for key in ordered:
+            value = group[key][()]
+            names.append(value.decode("utf-8") if isinstance(value, bytes) else str(value))
+    return expand_to_samples(names, n_samples)
+
+
+def class_ids_from_stimulus_names(stimulus_names: list[str]) -> torch.Tensor:
+    synsets = [name.split("_", 1)[0] for name in stimulus_names]
+    mapping = {synset: index for index, synset in enumerate(dict.fromkeys(synsets))}
+    return torch.tensor([mapping[synset] for synset in synsets], dtype=torch.long)
 
 
 def find_existing(base: Path, stems: list[str], suffixes: tuple[str, ...]) -> Path:
@@ -303,12 +341,19 @@ def auto_build_split(search_root: Path, subject: str, split: str, roi: str) -> d
         fmri = fmri[:, mask]
 
     n_samples = int(fmri.shape[0])
-    image_paths = discover_strings(search_root, subject, split, ("image", "stimulus", "stimuli", "path"), n_samples)
+    image_paths = stimulus_names_from_h5(fmri_path, n_samples)
+    if image_paths is not None:
+        print(f"FOUND HDF5 stimulus names {fmri_path}")
+    else:
+        image_paths = discover_strings(search_root, subject, split, ("image", "stimulus", "stimuli", "path"), n_samples)
     if image_paths is None:
         image_paths = fallback_image_paths(subject, split, n_samples)
         print(f"USING stable stimulus IDs for {subject} {split}; real image paths were not found.")
 
-    class_ids = discover_class_ids(search_root, subject, split, n_samples)
+    if image_paths and not image_paths[0].startswith(f"{subject}:{split}:stimulus_"):
+        class_ids = class_ids_from_stimulus_names(image_paths)
+    else:
+        class_ids = discover_class_ids(search_root, subject, split, n_samples)
     if class_ids is None:
         class_ids = fallback_class_ids(n_samples)
         print(f"USING fallback class ids for {subject} {split}; class metadata was not found.")
@@ -334,8 +379,11 @@ def build_split_from_available(raw_dir: Path, subject: str, split: str, roi: str
             return build_split(subject_dir, subject, split, roi)
         except FileNotFoundError:
             pass
-    search_root = materialize_archives(raw_dir)
-    return auto_build_split(raw_dir, subject, split, roi) if raw_dir != search_root else auto_build_split(search_root, subject, split, roi)
+    try:
+        return auto_build_split(raw_dir, subject, split, roi)
+    except FileNotFoundError:
+        search_root = materialize_archives(raw_dir)
+        return auto_build_split(search_root, subject, split, roi)
 
 
 def parse_args() -> argparse.Namespace:

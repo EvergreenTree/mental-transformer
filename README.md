@@ -188,3 +188,15 @@ training curves under `outputs/comparison_s1/`.
 ```bash
 python -m pytest
 ```
+
+## Citation
+
+```bibtex
+@article{chen2026human,
+  title={Human-like cognitive generalization for large models via mental representation-guided supervision},
+  author={Chen, Jiaxuan and Qi, Yu and Wang, Yueming and Pan, Gang},
+  journal={Nature Communications},
+  year={2026},
+  publisher={Nature Publishing Group UK London}
+}
+```
