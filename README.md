@@ -154,6 +154,35 @@ python scripts/run_minimal_real_s1.py --device mps
 This checks/downloads figshare files, preprocesses S1, extracts or validates S1
 features, runs a short training job, and prints data dimensions plus metrics.
 
+## S1 Comparison
+
+Run paper-aligned loss ablations on the same S1 train/test split and frozen
+OpenCLIP features:
+
+```bash
+python scripts/run_comparison_s1.py \
+  --processed-dir data/processed \
+  --feature-dir features \
+  --device mps \
+  --epochs 10 \
+  --batch-size 64
+```
+
+Methods:
+
+- `contrastive_only`: contrastive loss only.
+- `contrastive_ot`: contrastive plus Sinkhorn OT.
+- `mrgs`: contrastive plus Sinkhorn OT plus RDM alignment.
+
+Plot the comparison:
+
+```bash
+python scripts/plot_comparison.py --root outputs/comparison_s1
+```
+
+Outputs include `summary.csv`, retrieval bar charts, an RDM bar chart, and
+training curves under `outputs/comparison_s1/`.
+
 ## Development
 
 ```bash
