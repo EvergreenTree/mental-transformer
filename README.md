@@ -204,6 +204,6 @@ python -m pytest
   author={Chen, Jiaxuan and Qi, Yu and Wang, Yueming and Pan, Gang},
   journal={Nature Communications},
   year={2026},
-  publisher={Nature Publishing Group UK London}
+  publisher={Springer Nature}
 }
 ```
